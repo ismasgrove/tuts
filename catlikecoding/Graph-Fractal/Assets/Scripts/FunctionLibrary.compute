@@ -1,0 +1,136 @@
+#define PI 3.14159265358979323846
+
+#pragma kernel WaveKernel
+#pragma kernel WaveToMultiWaveKernel
+#pragma kernel WaveToRippleKernel
+#pragma kernel WaveToSphereKernel
+#pragma kernel WaveToTorusKernel
+
+#pragma kernel MultiWaveToWaveKernel
+#pragma kernel MultiWaveKernel
+#pragma kernel MultiWaveToRippleKernel
+#pragma kernel MultiWaveToSphereKernel
+#pragma kernel MultiWaveToTorusKernel
+
+#pragma kernel RippleToWaveKernel
+#pragma kernel RippleToMultiWaveKernel
+#pragma kernel RippleKernel
+#pragma kernel RippleToSphereKernel
+#pragma kernel RippleToTorusKernel
+
+#pragma kernel SphereToWaveKernel
+#pragma kernel SphereToMultiWaveKernel
+#pragma kernel SphereToRippleKernel
+#pragma kernel SphereKernel
+#pragma kernel SphereToTorusKernel
+
+#pragma kernel TorusToWaveKernel
+#pragma kernel TorusToMultiWaveKernel
+#pragma kernel TorusToRippleKernel
+#pragma kernel TorusToSphereKernel
+#pragma kernel TorusKernel
+
+float _Step, _Time, _TransitionProgress;
+RWStructuredBuffer<float3> _Positions;
+uint _Resolution;
+
+float2 GetUV(uint3 id) {
+	return (id.xy + 0.5) * _Step - 1.;
+}
+
+void SetPosition(uint3 id, float3 position) {
+	if (id.x < _Resolution && id.y < _Resolution)
+		_Positions[id.x + id.y * _Resolution] = position;
+}
+
+
+float3 Wave(float u, float v, float t)
+{
+	return float3(u, sin(PI * (u + v + t)), v);
+}
+
+float3 MultiWave(float u, float v, float t)
+{
+    float y = sin(PI * (u + t * 0.5)) + sin(2. * PI * (v + t)) * 0.5;
+    y += sin(PI * (u + v + 0.25 * t));
+    return float3(u, y * (1. / 2.5), v);
+}
+
+float3 Ripple(float u, float v, float t)
+{
+    float d = sqrt(v * v + u * u);
+    return float3(u, sin(PI * (4. * d - t)) / (1. + (10. * d)), v);
+}
+
+float3 Sphere(float u, float v, float t)
+{
+    float r = 0.9 + 0.1 * sin(PI * (12. * u + 8. * v + t));
+    float s = r * cos(0.5 * PI * v);
+    return float3(
+        s * sin(PI * u)
+        , r * sin(0.5 * PI * v)
+        , s * cos(PI * u)
+    );
+}
+
+float3 Torus(float u, float v, float t)
+{
+    float r1 = (7. + sin(PI * (8. * u + t * 0.5))) / 10
+        , r2 = (3. + sin(PI * (16. * u + 8. * v + 3. * t))) / 20;
+    float s = r1 + r2 * cos(0.5 * PI * v);
+    return float3(
+        s * sin(PI * u)
+        , r2 * sin(PI * v)
+        , s * cos(PI * u)
+    );
+}
+
+#define KERNEL_FUNCTION(function) \
+    [numthreads(8, 8, 1)] \
+    void function##Kernel(uint3 id : SV_DispatchThreadID) { \
+        float2 uv = GetUV(id); \
+        SetPosition(id, function(uv.x, uv.y, _Time)); \
+}
+
+#define KERNEL_MORPH_FUNCTION(functionA, functionB) \
+    [numthreads(8, 8, 1)] \
+    void functionA##To##functionB##Kernel(uint3 id : SV_DispatchThreadID) { \
+        float2 uv = GetUV(id); \
+        float3 position = lerp( \
+            functionA(uv.x, uv.y, _Time) \
+            , functionB(uv.x, uv.y, _Time) \
+            , _TransitionProgress); \
+        SetPosition(id, position); \
+}
+
+KERNEL_FUNCTION(Wave)
+KERNEL_FUNCTION(MultiWave)
+KERNEL_FUNCTION(Ripple)
+KERNEL_FUNCTION(Sphere)
+KERNEL_FUNCTION(Torus)
+
+KERNEL_MORPH_FUNCTION(Wave, MultiWave)
+KERNEL_MORPH_FUNCTION(Wave, Ripple)
+KERNEL_MORPH_FUNCTION(Wave, Sphere)
+KERNEL_MORPH_FUNCTION(Wave, Torus)
+
+KERNEL_MORPH_FUNCTION(MultiWave, Wave)
+KERNEL_MORPH_FUNCTION(MultiWave, Ripple)
+KERNEL_MORPH_FUNCTION(MultiWave, Sphere)
+KERNEL_MORPH_FUNCTION(MultiWave, Torus)
+
+KERNEL_MORPH_FUNCTION(Ripple, Wave)
+KERNEL_MORPH_FUNCTION(Ripple, MultiWave)
+KERNEL_MORPH_FUNCTION(Ripple, Sphere)
+KERNEL_MORPH_FUNCTION(Ripple, Torus)
+
+
+KERNEL_MORPH_FUNCTION(Sphere, Wave)
+KERNEL_MORPH_FUNCTION(Sphere, MultiWave)
+KERNEL_MORPH_FUNCTION(Sphere, Ripple)
+KERNEL_MORPH_FUNCTION(Sphere, Torus)
+
+KERNEL_MORPH_FUNCTION(Torus, Wave)
+KERNEL_MORPH_FUNCTION(Torus, MultiWave)
+KERNEL_MORPH_FUNCTION(Torus, Ripple)
+KERNEL_MORPH_FUNCTION(Torus, Sphere)
